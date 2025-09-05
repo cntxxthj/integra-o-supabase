@@ -170,16 +170,9 @@
         function listenForChanges(supabase, teamId) {
              supabase.channel(`webhooks_changes_${teamId}`)
                 .on('postgres_changes', 
-                    { event: '*', schema: 'public', table: 'webhooks', filter: `team_id=eq.${teamId}` }, 
+                    { event: 'INSERT', schema: 'public', table: 'webhooks', filter: `team_id=eq.${teamId}` }, 
                     (payload) => {
-                        if (payload.eventType === 'INSERT') {
-                            allWebhooks.unshift(payload.new);
-                        }
-                        if (payload.eventType === 'DELETE') {
-                            const idsToDelete = payload.old.id ? [payload.old.id] : payload.old.ids;
-                            allWebhooks = allWebhooks.filter(wh => !idsToDelete.includes(wh.id));
-                            selectedIds.forEach(id => { if (idsToDelete.includes(id)) selectedIds.delete(id); });
-                        }
+                        allWebhooks.unshift(payload.new);
                         applyFiltersAndRender();
                     }
                 )
@@ -242,6 +235,7 @@
             tr.querySelector('.view-btn').addEventListener('click', () => showPayloadModal(webhook.payload));
             tr.querySelector('.delete-btn').addEventListener('click', () => showDeleteModal([webhook.id], supabase));
             tr.querySelector('.row-checkbox').addEventListener('change', (e) => handleRowSelection(e, webhook.id));
+            tr.querySelector('.row-checkbox').checked = selectedIds.has(webhook.id);
             return tr;
         }
 
@@ -285,8 +279,10 @@
             }
             
             const visibleRows = tableBody.querySelectorAll('.row-checkbox').length;
-            selectAllCheckbox.checked = count > 0 && count === visibleRows;
-            selectAllCheckbox.indeterminate = count > 0 && count < visibleRows;
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = visibleRows > 0 && count === visibleRows;
+                selectAllCheckbox.indeterminate = count > 0 && count < visibleRows;
+            }
         }
 
 
@@ -414,8 +410,10 @@
                 if (error) {
                     alert('Erro ao apagar: ' + error.message);
                 } else {
-                    selectedIds.clear(); // Limpa a seleção após apagar
-                    updateSelectionState();
+                    // ATUALIZA A TELA IMEDIATAMENTE APÓS SUCESSO
+                    allWebhooks = allWebhooks.filter(webhook => !ids.includes(webhook.id));
+                    selectedIds.clear();
+                    applyFiltersAndRender();
                 }
                 closeModal('delete-confirm-modal');
             });
