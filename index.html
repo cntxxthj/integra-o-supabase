@@ -19,7 +19,7 @@
         .schema-value-number { color: #b5cea8; }
         .schema-value-boolean, .schema-value-null { color: #569cd6; }
         .schema-item { margin-left: 1.5rem; border-left: 1px solid #374151; padding-left: 1rem; }
-        .schema-toggle { cursor: pointer; margin-right: 0.5rem; color: #9ca3af; user-select: none; transition: transform 0.2s; }
+        .schema-toggle { cursor: pointer; margin-right: 0.5rem; color: #9ca3af; user-select: none; transition: transform 0.2s; display: inline-block; }
         .schema-toggle.collapsed { transform: rotate(-90deg); }
         .schema-content { display: block; }
         .schema-content.hidden { display: none; }
@@ -228,10 +228,10 @@
         function renderSchemaView(payload) {
             const container = document.getElementById('schema-view');
             container.innerHTML = '';
-            container.appendChild(createSchemaNode(payload));
+            container.appendChild(createSchemaNode(payload, true));
         }
 
-        function createSchemaNode(data) {
+        function createSchemaNode(data, isRoot = false) {
             const container = document.createElement('div');
             if (data === null) {
                 container.innerHTML = `<span class="schema-value-null">null</span>`;
@@ -255,6 +255,11 @@
             
             const content = document.createElement('div');
             content.className = 'schema-content schema-item';
+
+            if (!isRoot) {
+                content.classList.add('hidden');
+                summary.querySelector('.schema-toggle').classList.add('collapsed');
+            }
 
             summary.querySelector('.schema-toggle').addEventListener('click', (e) => {
                 e.stopPropagation();
