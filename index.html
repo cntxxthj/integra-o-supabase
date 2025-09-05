@@ -51,7 +51,7 @@
         <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col modal-content transform scale-95">
             <header class="p-4 border-b border-gray-700 flex justify-between items-center">
                 <div class="flex-grow">
-                     <div class="flex border-b-2 border-gray-700">
+                     <div class="flex">
                         <button id="raw-json-tab" class="py-2 px-4 text-sm font-medium border-b-2">Raw JSON</button>
                         <button id="schema-view-tab" class="py-2 px-4 text-sm font-medium border-b-2">Schema</button>
                     </div>
@@ -270,14 +270,11 @@
                 .on('postgres_changes', 
                     { event: '*', schema: 'public', table: 'webhooks', filter: `team_id=eq.${teamId}` }, 
                     () => {
-                        // Recarrega todos os dados para manter KPIs e paginação consistentes
                         mainTeam(teamId);
                     }
                 )
                 .subscribe();
         }
-
-        // --- FUNCIONALIDADES DO DASHBOARD (KPI, Filtros, Paginação, Exportação) ---
 
         function calculateAndRenderKPIs() {
             const paidSales = allWebhooks.filter(wh => wh.event === 'paid');
@@ -380,24 +377,204 @@
             document.body.removeChild(link);
         }
         
-        // --- FUNÇÕES UTILITÁRIAS (renderTable, renderRow, modais, etc.) ---
+        function populateStatusFilter() {
+            const select = document.getElementById('status-filter');
+            select.innerHTML = '<option value="">Todos os Status</option>';
+            for(const key in statusMap) {
+                if(key !== 'default') {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = statusMap[key].text;
+                    select.appendChild(option);
+                }
+            }
+        }
+
+        function renderTable(data) {
+            const tableBody = document.getElementById('webhooks-table-body');
+            tableBody.innerHTML = '';
+            if (data.length === 0) {
+                 tableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-gray-400">Nenhum resultado encontrado.</td></tr>`;
+            } else {
+                 data.forEach(webhook => tableBody.appendChild(renderRow(webhook)));
+            }
+            updateSelectionState();
+        }
+
+        function renderRow(webhook) {
+            const statusInfo = statusMap[webhook.event] || statusMap.default;
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-gray-700 hover:bg-gray-700/50";
+            tr.setAttribute('data-id', webhook.id);
+            tr.innerHTML = `
+                <td class="p-3"><input type="checkbox" data-id="${webhook.id}" class="row-checkbox bg-gray-600 border-gray-500 rounded"></td>
+                <td class="px-5 py-4 text-sm">${formatTimestamp(webhook.created_at)}</td>
+                <td class="px-5 py-4 text-sm"><span class="status-pill ${statusInfo.color}">${statusInfo.text}</span></td>
+                <td class="px-5 py-4 text-sm">${webhook.email}</td>
+                <td class="px-5 py-4 text-sm">${webhook.product_name || 'N/A'}</td>
+                <td class="px-5 py-4 text-sm text-center">
+                    <button class="view-btn text-blue-400 hover:text-blue-300 action-button mr-3">Ver</button>
+                    <button class="delete-btn text-red-400 hover:text-red-300 action-button">Apagar</button>
+                </td>
+            `;
+            tr.querySelector('.view-btn').addEventListener('click', () => showPayloadModal(webhook.payload));
+            tr.querySelector('.delete-btn').addEventListener('click', () => showDeleteModal([webhook.id]));
+            tr.querySelector('.row-checkbox').addEventListener('change', (e) => handleRowSelection(e, webhook.id));
+            tr.querySelector('.row-checkbox').checked = selectedIds.has(webhook.id);
+            return tr;
+        }
+
+        function handleRowSelection(event, id) {
+            if (event.target.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            updateSelectionState();
+        }
+
+        function handleSelectAll(event) {
+            const isChecked = event.target.checked;
+            const tableBody = document.getElementById('webhooks-table-body');
+            const rowCheckboxes = tableBody.querySelectorAll('.row-checkbox');
+            rowCheckboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+                const id = parseInt(checkbox.dataset.id);
+                if (isChecked) {
+                    selectedIds.add(id);
+                } else {
+                    selectedIds.delete(id);
+                }
+            });
+            updateSelectionState();
+        }
         
-        function populateStatusFilter() { /* ... */ }
-        function renderTable(data) { /* ... */ }
-        function renderRow(webhook) { /* ... */ }
-        function handleRowSelection(event, id) { /* ... */ }
-        function handleSelectAll(event) { /* ... */ }
-        function updateSelectionState() { /* ... */ }
+        function updateSelectionState() {
+            const count = selectedIds.size;
+            const bar = document.getElementById('bulk-actions-bar');
+            const countSpan = document.getElementById('selection-count');
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            
+            if (count > 0) {
+                countSpan.textContent = `${count} item(s) selecionado(s)`;
+                bar.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            } else {
+                bar.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }
+            
+            if (selectAllCheckbox) {
+                const visibleRows = document.getElementById('webhooks-table-body').querySelectorAll('.row-checkbox').length;
+                selectAllCheckbox.checked = visibleRows > 0 && count === visibleRows;
+                selectAllCheckbox.indeterminate = count > 0 && count < visibleRows;
+            }
+        }
+        
         function formatTimestamp(ts) { return new Date(ts).toLocaleString('pt-BR'); }
-        function showPayloadModal(payload) { /* ... */ }
-        function renderRawJsonView(payload, searchTerm = '') { /* ... */ }
-        function renderSchemaView(payload) { /* ... */ }
-        function createSchemaNode(data, isRoot = false) { /* ... */ }
-        function switchTab(tabName) { /* ... */ }
+        
+        function showPayloadModal(payload) {
+            currentPayload = payload;
+            document.getElementById('json-search-input').value = '';
+            renderRawJsonView(payload);
+            renderSchemaView(payload);
+            switchTab('raw-json');
+            openModal('payload-modal');
+        }
+        
+        function renderRawJsonView(payload, searchTerm = '') {
+            const contentEl = document.getElementById('payload-content');
+            let jsonString = JSON.stringify(payload, null, 2);
+            jsonString = jsonString.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            if (searchTerm) {
+                const regex = new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+                jsonString = jsonString.replace(regex, (match) => `<mark>${match}</mark>`);
+            }
+            contentEl.innerHTML = jsonString;
+        }
+
+        function renderSchemaView(payload) {
+            const container = document.getElementById('schema-view');
+            container.innerHTML = '';
+            container.appendChild(createSchemaNode(payload, true));
+        }
+
+        function createSchemaNode(data, isRoot = false) {
+            const container = document.createElement('div');
+            if (data === null) {
+                container.innerHTML = `<span class="schema-value-null">null</span>`;
+                return container;
+            }
+            if (typeof data !== 'object' || data === null) {
+                 let type = `schema-value-${typeof data}`;
+                 if (typeof data === 'string') container.innerHTML = `<span class="${type}">"${data}"</span>`;
+                 else container.innerHTML = `<span class="${type}">${data}</span>`;
+                 return container;
+            }
+            const isArray = Array.isArray(data);
+            const opening = isArray ? '[' : '{';
+            const closing = isArray ? ']' : '}';
+            const summary = document.createElement('div');
+            const keys = Object.keys(data);
+            const summaryText = isArray ? `Array(${keys.length})` : `Object(${keys.length})`;
+            const toggleChar = isRoot ? '▼' : '▶';
+            summary.innerHTML = `<span class="schema-toggle">${toggleChar}</span><span>${opening}<span class="text-gray-500 italic ml-2">${summaryText}</span></span>`;
+            const content = document.createElement('div');
+            content.className = 'schema-content schema-item';
+            if (!isRoot) {
+                content.classList.add('hidden');
+            }
+            summary.querySelector('.schema-toggle').addEventListener('click', (e) => {
+                e.stopPropagation();
+                content.classList.toggle('hidden');
+                e.currentTarget.textContent = content.classList.contains('hidden') ? '▶' : '▼';
+            });
+            for (const key of keys) {
+                const item = document.createElement('div');
+                const keyEl = isArray ? '' : `<span class="schema-key">"${key}"</span>: `;
+                item.innerHTML = keyEl;
+                item.appendChild(createSchemaNode(data[key]));
+                content.appendChild(item);
+            }
+            container.appendChild(summary);
+            container.appendChild(content);
+            container.appendChild(document.createTextNode(closing));
+            return container;
+        }
+        
+        function switchTab(tabName) {
+            const [rawView, schemaView, searchContainer, rawTab, schemaTab] = [
+                document.getElementById('raw-json-view'), document.getElementById('schema-view'),
+                document.getElementById('search-container'), document.getElementById('raw-json-tab'),
+                document.getElementById('schema-view-tab')
+            ];
+            const isRaw = tabName === 'raw-json';
+            rawView.classList.toggle('hidden', !isRaw);
+            searchContainer.classList.toggle('hidden', !isRaw);
+            schemaView.classList.toggle('hidden', isRaw);
+            rawTab.classList.toggle('text-white', isRaw);
+            rawTab.classList.toggle('border-emerald-400', isRaw);
+            rawTab.classList.toggle('text-gray-400', !isRaw);
+            rawTab.classList.toggle('border-transparent', !isRaw);
+            schemaTab.classList.toggle('text-white', !isRaw);
+            schemaTab.classList.toggle('border-emerald-400', !isRaw);
+            schemaTab.classList.toggle('text-gray-400', isRaw);
+            schemaTab.classList.toggle('border-transparent', isRaw);
+        }
+        
         async function showDeleteModal(ids) {
-            openModal('delete-confirm-modal');
-            const confirmBtn = document.getElementById('confirm-delete-btn');
-            const newConfirmBtn = confirmBtn.cloneNode(true); // Evita múltiplos listeners
+            const modal = document.getElementById('delete-confirm-modal');
+            const confirmBtn = modal.querySelector('#confirm-delete-btn');
+            const title = modal.querySelector('#delete-modal-title');
+            const text = modal.querySelector('#delete-modal-text');
+
+            if(ids.length > 1) {
+                title.textContent = `Confirmar Exclusão em Massa`;
+                text.textContent = `Tem certeza que deseja apagar os ${ids.length} registros selecionados? Esta ação não pode ser desfeita.`;
+            } else {
+                title.textContent = `Confirmar Exclusão`;
+                text.textContent = `Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.`;
+            }
+            
+            const newConfirmBtn = confirmBtn.cloneNode(true);
             confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
 
             newConfirmBtn.addEventListener('click', async () => {
@@ -411,27 +588,35 @@
                 }
                 closeModal('delete-confirm-modal');
             });
+            openModal('delete-confirm-modal');
         }
-        function openModal(modalId) { /* ... */ }
-        window.closeModal = function(modalId) { /* ... */ }
+        
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.modal-content').classList.remove('scale-95');
+        }
 
-        // --- Adicionei as implementações completas que foram omitidas para o código funcionar ---
+        window.closeModal = function(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.add('opacity-0');
+            modal.querySelector('.modal-content').classList.add('scale-95');
+            setTimeout(() => modal.classList.add('pointer-events-none'), 300);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
-             // Re-liga eventos que podem se perder na renderização dinâmica
             const payloadModal = document.getElementById('payload-modal');
-            if (payloadModal) {
-                payloadModal.querySelector('#raw-json-tab').addEventListener('click', () => switchTab('raw-json'));
-                payloadModal.querySelector('#schema-view-tab').addEventListener('click', () => switchTab('schema-view'));
-                payloadModal.querySelector('#json-search-input').addEventListener('input', (e) => {
-                    if(currentPayload) renderRawJsonView(currentPayload, e.target.value);
-                });
-            }
+            payloadModal.querySelector('#raw-json-tab').addEventListener('click', () => switchTab('raw-json'));
+            payloadModal.querySelector('#schema-view-tab').addEventListener('click', () => switchTab('schema-view'));
+            payloadModal.querySelector('#json-search-input').addEventListener('input', (e) => {
+                if(currentPayload) renderRawJsonView(currentPayload, e.target.value);
+            });
+            
             const deleteModal = document.getElementById('delete-confirm-modal');
-            if (deleteModal) {
-                 deleteModal.querySelector('#cancel-delete-btn').addEventListener('click', () => closeModal('delete-confirm-modal'));
-            }
+            deleteModal.querySelector('#cancel-delete-btn').addEventListener('click', () => closeModal('delete-confirm-modal'));
         });
 
     </script>
 </body>
 </html>
+
