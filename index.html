@@ -13,17 +13,15 @@
         .status-pill { padding: 4px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.75rem; display: inline-block; text-align: center; min-width: 110px;}
         .action-button { transition: background-color 0.2s, transform 0.2s; }
         .action-button:hover { transform: scale(1.05); }
-        /* Estilos para o novo visualizador de Schema */
         .schema-key { color: #9cdcfe; }
         .schema-value-string { color: #ce9178; }
         .schema-value-number { color: #b5cea8; }
         .schema-value-boolean, .schema-value-null { color: #569cd6; }
         .schema-item { margin-left: 1.5rem; border-left: 1px solid #374151; padding-left: 1rem; }
-        .schema-toggle { cursor: pointer; margin-right: 0.5rem; color: #9ca3af; user-select: none; transition: transform 0.2s; display: inline-block; }
-        .schema-toggle.collapsed { transform: rotate(-90deg); }
-        .schema-content { display: block; }
+        .schema-toggle { cursor: pointer; margin-right: 0.5rem; color: #9ca3af; user-select: none; display: inline-block; width: 1em; text-align: center; }
         .schema-content.hidden { display: none; }
         mark { background-color: #facc15; color: black; border-radius: 2px; padding: 0 2px; }
+        #bulk-actions-bar { transition: transform 0.3s ease, opacity 0.3s ease; }
     </style>
 </head>
 <body class="text-gray-100">
@@ -38,8 +36,15 @@
             <!-- Conteúdo será inserido aqui pelo JS -->
         </div>
     </div>
+    
+    <!-- Barra de Ações em Massa -->
+    <div id="bulk-actions-bar" class="fixed bottom-0 left-1/2 -translate-x-1/2 mb-4 bg-gray-900 shadow-lg rounded-lg p-3 flex items-center gap-4 transform translate-y-20 opacity-0 pointer-events-none">
+        <span id="selection-count" class="text-sm font-medium text-white"></span>
+        <button id="bulk-delete-btn" class="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-500 rounded-md action-button">Apagar Selecionados</button>
+    </div>
 
-    <!-- Modal para ver o Payload Completo (Atualizado) -->
+
+    <!-- Modal para ver o Payload Completo -->
     <div id="payload-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 modal-backdrop opacity-0 pointer-events-none z-50">
         <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col modal-content transform scale-95">
             <header class="p-4 border-b border-gray-700 flex justify-between items-center">
@@ -58,9 +63,7 @@
                  <div id="raw-json-view" class="p-4">
                     <pre class="text-sm bg-gray-900 p-4 rounded-md whitespace-pre-wrap break-words"><code id="payload-content"></code></pre>
                 </div>
-                <div id="schema-view" class="hidden p-4 text-sm bg-gray-900 rounded-md font-mono">
-                    <!-- Schema será renderizado aqui -->
-                </div>
+                <div id="schema-view" class="hidden p-4 text-sm bg-gray-900 rounded-md font-mono"></div>
             </main>
         </div>
     </div>
@@ -69,8 +72,8 @@
     <div id="delete-confirm-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 modal-backdrop opacity-0 pointer-events-none z-50">
         <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md modal-content transform scale-95">
             <div class="p-6 text-center">
-                <h3 class="text-xl font-bold mb-4">Confirmar Exclusão</h3>
-                <p class="text-gray-400 mb-6">Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.</p>
+                <h3 id="delete-modal-title" class="text-xl font-bold mb-4">Confirmar Exclusão</h3>
+                <p id="delete-modal-text" class="text-gray-400 mb-6">Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.</p>
                 <div class="flex justify-center gap-4">
                     <button id="cancel-delete-btn" class="px-6 py-2 rounded-md bg-gray-600 hover:bg-gray-500 action-button">Cancelar</button>
                     <button id="confirm-delete-btn" class="px-6 py-2 rounded-md bg-red-600 hover:bg-red-500 action-button">Sim, apagar</button>
@@ -83,12 +86,16 @@
         import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
         const SUPABASE_URL = 'https://tgvwmsmlbgidalupptnk.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRndndtc21sYmdpZGFsdXBwdG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NzE2ODgsImV4cCI6MjA2OTU0NzY4OH0.6uuf9sOR7DuA2xd7T-Hu5bjv-LaaW_xEWA73_dhc3uI'; 
+        const SUPABASE_ANON_KEY = 'SUA_CHAVE_ANON_PUBLICA_AQUI'; 
 
         const mainContent = document.getElementById('main-content');
         const subtitle = document.getElementById('subtitle');
+        
+        let supabase;
         let tableBody; 
         let currentPayload = null;
+        let allWebhooks = [];
+        let selectedIds = new Set();
 
         const statusMap = {
             waitingPayment: { text: "Aguardando Pag.", color: "bg-yellow-500/20 text-yellow-300" },
@@ -112,15 +119,20 @@
         } else {
             subtitle.textContent = `Exibindo eventos para o time: ${teamId}`;
             setupDashboard();
-            const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             main(supabase, teamId);
         }
 
         function setupDashboard() {
             mainContent.innerHTML = `
+            <div class="p-4 flex flex-col sm:flex-row gap-4 border-b border-gray-700">
+                <select id="status-filter" class="bg-gray-700 p-2 rounded-md text-sm w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-emerald-400"></select>
+                <input id="search-input" type="text" placeholder="Buscar por email ou produto..." class="bg-gray-700 p-2 rounded-md text-sm w-full sm:flex-grow focus:outline-none focus:ring-2 focus:ring-emerald-400">
+            </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full leading-normal">
                     <thead><tr class="border-b-2 border-gray-700">
+                        <th class="p-3 bg-gray-700 w-12"><input type="checkbox" id="select-all-checkbox" class="bg-gray-600 border-gray-500 rounded"></th>
                         <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Data/Hora</th>
                         <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Status</th>
                         <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Email</th>
@@ -128,58 +140,96 @@
                         <th class="px-5 py-3 bg-gray-700 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Ações</th>
                     </tr></thead>
                     <tbody id="webhooks-table-body">
-                         <tr id="loading-row"><td colspan="5" class="text-center p-8 text-gray-400">Carregando dados...</td></tr>
+                         <tr id="loading-row"><td colspan="6" class="text-center p-8 text-gray-400">Carregando dados...</td></tr>
                     </tbody>
                 </table>
             </div>`;
             tableBody = document.getElementById('webhooks-table-body');
+            populateStatusFilter();
+
+            document.getElementById('status-filter').addEventListener('input', applyFiltersAndRender);
+            document.getElementById('search-input').addEventListener('input', applyFiltersAndRender);
+            document.getElementById('select-all-checkbox').addEventListener('change', handleSelectAll);
+            document.getElementById('bulk-delete-btn').addEventListener('click', () => {
+                showDeleteModal(Array.from(selectedIds), supabase)
+            });
         }
         
         async function main(supabase, teamId) {
-            const { data, error } = await supabase.from('webhooks')
-                .select('*')
-                .eq('team_id', teamId) 
-                .order('created_at', { ascending: false });
-
-            const loadingRow = document.getElementById('loading-row');
-            if(loadingRow) loadingRow.remove();
+            const { data, error } = await supabase.from('webhooks').select('*').eq('team_id', teamId).order('created_at', { ascending: false });
 
             if (error) {
-                tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-red-400">Erro ao carregar dados: ${error.message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-red-400">Erro ao carregar dados: ${error.message}</td></tr>`;
                 return;
             }
-            
-            if (data.length === 0) {
-                 tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-gray-400">Nenhum webhook encontrado para este time.</td></tr>`;
-            } else {
-                 data.forEach(webhook => tableBody.appendChild(renderRow(webhook, supabase)));
-            }
-
-            supabase.channel(`webhooks_changes_${teamId}`)
+            allWebhooks = data;
+            applyFiltersAndRender();
+            listenForChanges(supabase, teamId);
+        }
+        
+        function listenForChanges(supabase, teamId) {
+             supabase.channel(`webhooks_changes_${teamId}`)
                 .on('postgres_changes', 
                     { event: '*', schema: 'public', table: 'webhooks', filter: `team_id=eq.${teamId}` }, 
                     (payload) => {
-                        const noDataRow = tableBody.querySelector('td[colspan="5"]');
-                        if(noDataRow) noDataRow.parentElement.remove();
-                        
                         if (payload.eventType === 'INSERT') {
-                            tableBody.insertBefore(renderRow(payload.new, supabase), tableBody.firstChild);
+                            allWebhooks.unshift(payload.new);
                         }
                         if (payload.eventType === 'DELETE') {
-                            const row = document.querySelector(`tr[data-id='${payload.old.id}']`);
-                            if (row) row.remove();
+                            const idsToDelete = payload.old.id ? [payload.old.id] : payload.old.ids;
+                            allWebhooks = allWebhooks.filter(wh => !idsToDelete.includes(wh.id));
+                            selectedIds.forEach(id => { if (idsToDelete.includes(id)) selectedIds.delete(id); });
                         }
+                        applyFiltersAndRender();
                     }
                 )
                 .subscribe();
         }
 
-        function renderRow(webhook, supabase) {
+        function populateStatusFilter() {
+            const select = document.getElementById('status-filter');
+            select.innerHTML = '<option value="">Todos os Status</option>';
+            for(const key in statusMap) {
+                if(key !== 'default') {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = statusMap[key].text;
+                    select.appendChild(option);
+                }
+            }
+        }
+
+        function applyFiltersAndRender() {
+            const statusFilter = document.getElementById('status-filter').value;
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+
+            const filteredData = allWebhooks.filter(webhook => {
+                const statusMatch = !statusFilter || webhook.event === statusFilter;
+                const searchMatch = !searchTerm || 
+                                    webhook.email?.toLowerCase().includes(searchTerm) ||
+                                    webhook.product_name?.toLowerCase().includes(searchTerm);
+                return statusMatch && searchMatch;
+            });
+            renderTable(filteredData);
+        }
+
+        function renderTable(data) {
+            tableBody.innerHTML = '';
+            if (data.length === 0) {
+                 tableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-gray-400">Nenhum resultado encontrado.</td></tr>`;
+            } else {
+                 data.forEach(webhook => tableBody.appendChild(renderRow(webhook)));
+            }
+            updateSelectionState();
+        }
+
+        function renderRow(webhook) {
             const statusInfo = statusMap[webhook.event] || statusMap.default;
             const tr = document.createElement('tr');
             tr.className = "border-b border-gray-700 hover:bg-gray-700/50";
             tr.setAttribute('data-id', webhook.id);
             tr.innerHTML = `
+                <td class="p-3"><input type="checkbox" data-id="${webhook.id}" class="row-checkbox bg-gray-600 border-gray-500 rounded"></td>
                 <td class="px-5 py-4 text-sm">${formatTimestamp(webhook.created_at)}</td>
                 <td class="px-5 py-4 text-sm"><span class="status-pill ${statusInfo.color}">${statusInfo.text}</span></td>
                 <td class="px-5 py-4 text-sm">${webhook.email}</td>
@@ -190,23 +240,67 @@
                 </td>
             `;
             tr.querySelector('.view-btn').addEventListener('click', () => showPayloadModal(webhook.payload));
-            tr.querySelector('.delete-btn').addEventListener('click', () => showDeleteModal(webhook.id, supabase));
+            tr.querySelector('.delete-btn').addEventListener('click', () => showDeleteModal([webhook.id], supabase));
+            tr.querySelector('.row-checkbox').addEventListener('change', (e) => handleRowSelection(e, webhook.id));
             return tr;
         }
+
+        // --- LÓGICA DE SELEÇÃO E AÇÕES EM MASSA ---
+
+        function handleRowSelection(event, id) {
+            if (event.target.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            updateSelectionState();
+        }
+
+        function handleSelectAll(event) {
+            const isChecked = event.target.checked;
+            const rowCheckboxes = tableBody.querySelectorAll('.row-checkbox');
+            rowCheckboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+                const id = parseInt(checkbox.dataset.id);
+                if (isChecked) {
+                    selectedIds.add(id);
+                } else {
+                    selectedIds.delete(id);
+                }
+            });
+            updateSelectionState();
+        }
+        
+        function updateSelectionState() {
+            const count = selectedIds.size;
+            const bar = document.getElementById('bulk-actions-bar');
+            const countSpan = document.getElementById('selection-count');
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            
+            if (count > 0) {
+                countSpan.textContent = `${count} item(s) selecionado(s)`;
+                bar.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            } else {
+                bar.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }
+            
+            const visibleRows = tableBody.querySelectorAll('.row-checkbox').length;
+            selectAllCheckbox.checked = count > 0 && count === visibleRows;
+            selectAllCheckbox.indeterminate = count > 0 && count < visibleRows;
+        }
+
+
+        // --- FUNÇÕES DE MODAL ---
 
         function formatTimestamp(ts) {
             return new Date(ts).toLocaleString('pt-BR');
         }
-
-        // --- FUNÇÕES DO MODAL ATUALIZADAS ---
         
         function showPayloadModal(payload) {
             currentPayload = payload;
             document.getElementById('json-search-input').value = '';
-            
             renderRawJsonView(payload);
             renderSchemaView(payload);
-            
             switchTab('raw-json');
             openModal('payload-modal');
         }
@@ -214,10 +308,7 @@
         function renderRawJsonView(payload, searchTerm = '') {
             const contentEl = document.getElementById('payload-content');
             let jsonString = JSON.stringify(payload, null, 2);
-            
-            // Escapa HTML para segurança
             jsonString = jsonString.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
             if (searchTerm) {
                 const regex = new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
                 jsonString = jsonString.replace(regex, (match) => `<mark>${match}</mark>`);
@@ -243,30 +334,24 @@
                  else container.innerHTML = `<span class="${type}">${data}</span>`;
                  return container;
             }
-
             const isArray = Array.isArray(data);
             const opening = isArray ? '[' : '{';
             const closing = isArray ? ']' : '}';
-            
             const summary = document.createElement('div');
             const keys = Object.keys(data);
             const summaryText = isArray ? `Array(${keys.length})` : `Object(${keys.length})`;
-            summary.innerHTML = `<span class="schema-toggle">▼</span><span>${opening}<span class="text-gray-500 italic ml-2">${summaryText}</span></span>`;
-            
+            const toggleChar = isRoot ? '▼' : '▶';
+            summary.innerHTML = `<span class="schema-toggle">${toggleChar}</span><span>${opening}<span class="text-gray-500 italic ml-2">${summaryText}</span></span>`;
             const content = document.createElement('div');
             content.className = 'schema-content schema-item';
-
             if (!isRoot) {
                 content.classList.add('hidden');
-                summary.querySelector('.schema-toggle').classList.add('collapsed');
             }
-
             summary.querySelector('.schema-toggle').addEventListener('click', (e) => {
                 e.stopPropagation();
                 content.classList.toggle('hidden');
-                summary.querySelector('.schema-toggle').classList.toggle('collapsed');
+                e.currentTarget.textContent = content.classList.contains('hidden') ? '▶' : '▼';
             });
-
             for (const key of keys) {
                 const item = document.createElement('div');
                 const keyEl = isArray ? '' : `<span class="schema-key">"${key}"</span>: `;
@@ -274,7 +359,6 @@
                 item.appendChild(createSchemaNode(data[key]));
                 content.appendChild(item);
             }
-            
             container.appendChild(summary);
             container.appendChild(content);
             container.appendChild(document.createTextNode(closing));
@@ -282,50 +366,56 @@
         }
         
         function switchTab(tabName) {
-            const rawView = document.getElementById('raw-json-view');
-            const schemaView = document.getElementById('schema-view');
-            const searchContainer = document.getElementById('search-container');
-            const rawTab = document.getElementById('raw-json-tab');
-            const schemaTab = document.getElementById('schema-view-tab');
-
-            if (tabName === 'raw-json') {
-                rawView.classList.remove('hidden');
-                searchContainer.classList.remove('hidden');
-                schemaView.classList.add('hidden');
-                rawTab.classList.add('text-white', 'border-emerald-400');
-                rawTab.classList.remove('text-gray-400', 'border-transparent');
-                schemaTab.classList.add('text-gray-400', 'border-transparent');
-                schemaTab.classList.remove('text-white', 'border-emerald-400');
-            } else {
-                schemaView.classList.remove('hidden');
-                rawView.classList.add('hidden');
-                searchContainer.classList.add('hidden');
-                schemaTab.classList.add('text-white', 'border-emerald-400');
-                schemaTab.classList.remove('text-gray-400', 'border-transparent');
-                rawTab.classList.add('text-gray-400', 'border-transparent');
-                rawTab.classList.remove('text-white', 'border-emerald-400');
-            }
+            const [rawView, schemaView, searchContainer, rawTab, schemaTab] = [
+                document.getElementById('raw-json-view'), document.getElementById('schema-view'),
+                document.getElementById('search-container'), document.getElementById('raw-json-tab'),
+                document.getElementById('schema-view-tab')
+            ];
+            const isRaw = tabName === 'raw-json';
+            rawView.classList.toggle('hidden', !isRaw);
+            searchContainer.classList.toggle('hidden', !isRaw);
+            schemaView.classList.toggle('hidden', isRaw);
+            rawTab.classList.toggle('text-white', isRaw);
+            rawTab.classList.toggle('border-emerald-400', isRaw);
+            rawTab.classList.toggle('text-gray-400', !isRaw);
+            rawTab.classList.toggle('border-transparent', !isRaw);
+            schemaTab.classList.toggle('text-white', !isRaw);
+            schemaTab.classList.toggle('border-emerald-400', !isRaw);
+            schemaTab.classList.toggle('text-gray-400', isRaw);
+            schemaTab.classList.toggle('border-transparent', isRaw);
         }
         
-        // Event Listeners para o Modal
         document.getElementById('raw-json-tab').addEventListener('click', () => switchTab('raw-json'));
         document.getElementById('schema-view-tab').addEventListener('click', () => switchTab('schema-view'));
         document.getElementById('json-search-input').addEventListener('input', (e) => {
             if(currentPayload) renderRawJsonView(currentPayload, e.target.value);
         });
 
-        function showDeleteModal(id, supabase) {
+        function showDeleteModal(ids, supabase) {
             openModal('delete-confirm-modal');
             const confirmBtn = document.getElementById('confirm-delete-btn');
             const cancelBtn = document.getElementById('cancel-delete-btn');
+            const title = document.getElementById('delete-modal-title');
+            const text = document.getElementById('delete-modal-text');
+
+            if(ids.length > 1) {
+                title.textContent = `Confirmar Exclusão em Massa`;
+                text.textContent = `Tem certeza que deseja apagar os ${ids.length} registros selecionados? Esta ação não pode ser desfeita.`;
+            } else {
+                title.textContent = `Confirmar Exclusão`;
+                text.textContent = `Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.`;
+            }
 
             const newConfirmBtn = confirmBtn.cloneNode(true);
             confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
 
             newConfirmBtn.addEventListener('click', async () => {
-                const { error } = await supabase.from('webhooks').delete().eq('id', id);
+                const { error } = await supabase.from('webhooks').delete().in('id', ids);
                 if (error) {
                     alert('Erro ao apagar: ' + error.message);
+                } else {
+                    selectedIds.clear(); // Limpa a seleção após apagar
+                    updateSelectionState();
                 }
                 closeModal('delete-confirm-modal');
             });
