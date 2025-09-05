@@ -13,6 +13,17 @@
         .status-pill { padding: 4px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.75rem; display: inline-block; text-align: center; min-width: 110px;}
         .action-button { transition: background-color 0.2s, transform 0.2s; }
         .action-button:hover { transform: scale(1.05); }
+        /* Estilos para o novo visualizador de Schema */
+        .schema-key { color: #9cdcfe; }
+        .schema-value-string { color: #ce9178; }
+        .schema-value-number { color: #b5cea8; }
+        .schema-value-boolean, .schema-value-null { color: #569cd6; }
+        .schema-item { margin-left: 1.5rem; border-left: 1px solid #374151; padding-left: 1rem; }
+        .schema-toggle { cursor: pointer; margin-right: 0.5rem; color: #9ca3af; user-select: none; transition: transform 0.2s; }
+        .schema-toggle.collapsed { transform: rotate(-90deg); }
+        .schema-content { display: block; }
+        .schema-content.hidden { display: none; }
+        mark { background-color: #facc15; color: black; border-radius: 2px; padding: 0 2px; }
     </style>
 </head>
 <body class="text-gray-100">
@@ -28,15 +39,28 @@
         </div>
     </div>
 
-    <!-- Modal para ver o Payload Completo -->
+    <!-- Modal para ver o Payload Completo (Atualizado) -->
     <div id="payload-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 modal-backdrop opacity-0 pointer-events-none z-50">
-        <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col modal-content transform scale-95">
+        <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col modal-content transform scale-95">
             <header class="p-4 border-b border-gray-700 flex justify-between items-center">
-                <h2 class="text-lg font-semibold">Payload Completo (JSON)</h2>
-                <button onclick="closeModal('payload-modal')" class="text-gray-400 hover:text-white">&times;</button>
+                <div class="flex-grow">
+                     <div class="flex border-b-2 border-gray-700">
+                        <button id="raw-json-tab" class="py-2 px-4 text-sm font-medium border-b-2">Raw JSON</button>
+                        <button id="schema-view-tab" class="py-2 px-4 text-sm font-medium border-b-2">Schema</button>
+                    </div>
+                </div>
+                <button onclick="closeModal('payload-modal')" class="text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
             </header>
-            <main class="p-4 overflow-y-auto">
-                <pre id="payload-content" class="text-sm bg-gray-900 p-4 rounded-md whitespace-pre-wrap break-words"></pre>
+            <div id="search-container" class="p-2 border-b border-gray-700">
+                <input type="text" id="json-search-input" placeholder="Pesquisar no JSON..." class="w-full bg-gray-900 text-white p-2 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+            </div>
+            <main class="overflow-y-auto">
+                 <div id="raw-json-view" class="p-4">
+                    <pre class="text-sm bg-gray-900 p-4 rounded-md whitespace-pre-wrap break-words"><code id="payload-content"></code></pre>
+                </div>
+                <div id="schema-view" class="hidden p-4 text-sm bg-gray-900 rounded-md font-mono">
+                    <!-- Schema será renderizado aqui -->
+                </div>
             </main>
         </div>
     </div>
@@ -59,11 +83,12 @@
         import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
         const SUPABASE_URL = 'https://tgvwmsmlbgidalupptnk.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRndndtc21sYmdpZGFsdXBwdG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NzE2ODgsImV4cCI6MjA2OTU0NzY4OH0.6uuf9sOR7DuA2xd7T-Hu5bjv-LaaW_xEWA73_dhc3uI'; 
+        const SUPABASE_ANON_KEY = 'SUA_CHAVE_ANON_PUBLICA_AQUI'; 
 
         const mainContent = document.getElementById('main-content');
         const subtitle = document.getElementById('subtitle');
         let tableBody; 
+        let currentPayload = null;
 
         const statusMap = {
             waitingPayment: { text: "Aguardando Pag.", color: "bg-yellow-500/20 text-yellow-300" },
@@ -173,10 +198,116 @@
             return new Date(ts).toLocaleString('pt-BR');
         }
 
+        // --- FUNÇÕES DO MODAL ATUALIZADAS ---
+        
         function showPayloadModal(payload) {
-            document.getElementById('payload-content').textContent = JSON.stringify(payload, null, 2);
+            currentPayload = payload;
+            document.getElementById('json-search-input').value = '';
+            
+            renderRawJsonView(payload);
+            renderSchemaView(payload);
+            
+            switchTab('raw-json');
             openModal('payload-modal');
         }
+        
+        function renderRawJsonView(payload, searchTerm = '') {
+            const contentEl = document.getElementById('payload-content');
+            let jsonString = JSON.stringify(payload, null, 2);
+            
+            // Escapa HTML para segurança
+            jsonString = jsonString.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+            if (searchTerm) {
+                const regex = new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+                jsonString = jsonString.replace(regex, (match) => `<mark>${match}</mark>`);
+            }
+            contentEl.innerHTML = jsonString;
+        }
+
+        function renderSchemaView(payload) {
+            const container = document.getElementById('schema-view');
+            container.innerHTML = '';
+            container.appendChild(createSchemaNode(payload));
+        }
+
+        function createSchemaNode(data) {
+            const container = document.createElement('div');
+            if (data === null) {
+                container.innerHTML = `<span class="schema-value-null">null</span>`;
+                return container;
+            }
+            if (typeof data !== 'object') {
+                 let type = `schema-value-${typeof data}`;
+                 if (typeof data === 'string') container.innerHTML = `<span class="${type}">"${data}"</span>`;
+                 else container.innerHTML = `<span class="${type}">${data}</span>`;
+                 return container;
+            }
+
+            const isArray = Array.isArray(data);
+            const opening = isArray ? '[' : '{';
+            const closing = isArray ? ']' : '}';
+            
+            const summary = document.createElement('div');
+            const keys = Object.keys(data);
+            const summaryText = isArray ? `Array(${keys.length})` : `Object(${keys.length})`;
+            summary.innerHTML = `<span class="schema-toggle">▼</span><span>${opening}<span class="text-gray-500 italic ml-2">${summaryText}</span></span>`;
+            
+            const content = document.createElement('div');
+            content.className = 'schema-content schema-item';
+
+            summary.querySelector('.schema-toggle').addEventListener('click', (e) => {
+                e.stopPropagation();
+                content.classList.toggle('hidden');
+                summary.querySelector('.schema-toggle').classList.toggle('collapsed');
+            });
+
+            for (const key of keys) {
+                const item = document.createElement('div');
+                const keyEl = isArray ? '' : `<span class="schema-key">"${key}"</span>: `;
+                item.innerHTML = keyEl;
+                item.appendChild(createSchemaNode(data[key]));
+                content.appendChild(item);
+            }
+            
+            container.appendChild(summary);
+            container.appendChild(content);
+            container.appendChild(document.createTextNode(closing));
+            return container;
+        }
+        
+        function switchTab(tabName) {
+            const rawView = document.getElementById('raw-json-view');
+            const schemaView = document.getElementById('schema-view');
+            const searchContainer = document.getElementById('search-container');
+            const rawTab = document.getElementById('raw-json-tab');
+            const schemaTab = document.getElementById('schema-view-tab');
+
+            if (tabName === 'raw-json') {
+                rawView.classList.remove('hidden');
+                searchContainer.classList.remove('hidden');
+                schemaView.classList.add('hidden');
+                rawTab.classList.add('text-white', 'border-emerald-400');
+                rawTab.classList.remove('text-gray-400', 'border-transparent');
+                schemaTab.classList.add('text-gray-400', 'border-transparent');
+                schemaTab.classList.remove('text-white', 'border-emerald-400');
+            } else {
+                schemaView.classList.remove('hidden');
+                rawView.classList.add('hidden');
+                searchContainer.classList.add('hidden');
+                schemaTab.classList.add('text-white', 'border-emerald-400');
+                schemaTab.classList.remove('text-gray-400', 'border-transparent');
+                rawTab.classList.add('text-gray-400', 'border-transparent');
+                rawTab.classList.remove('text-white', 'border-emerald-400');
+            }
+        }
+        
+        // Event Listeners para o Modal
+        document.getElementById('raw-json-tab').addEventListener('click', () => switchTab('raw-json'));
+        document.getElementById('schema-view-tab').addEventListener('click', () => switchTab('schema-view'));
+        document.getElementById('json-search-input').addEventListener('input', (e) => {
+            if(currentPayload) renderRawJsonView(currentPayload, e.target.value);
+        });
 
         function showDeleteModal(id, supabase) {
             openModal('delete-confirm-modal');
