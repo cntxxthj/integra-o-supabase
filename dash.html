@@ -10,9 +10,6 @@
         body { font-family: 'Inter', sans-serif; background-color: #111827; }
         .modal-backdrop { transition: opacity 0.3s ease; }
         .modal-content { transition: transform 0.3s ease; }
-        pre::-webkit-scrollbar { width: 8px; }
-        pre::-webkit-scrollbar-track { background: #1f2937; }
-        pre::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 4px; }
         .status-pill { padding: 4px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.75rem; display: inline-block; text-align: center; min-width: 110px;}
         .action-button { transition: background-color 0.2s, transform 0.2s; }
         .action-button:hover { transform: scale(1.05); }
@@ -23,208 +20,194 @@
     <div class="container mx-auto p-4 sm:p-6 lg:p-8">
         <header class="mb-8 text-center">
             <h1 class="text-3xl sm:text-4xl font-bold text-emerald-400">Dashboard de Webhooks</h1>
-            <p class="text-gray-400 mt-2">Visualização em tempo real dos eventos recebidos da Green.</p>
+            <p id="subtitle" class="text-gray-400 mt-2">Visualização em tempo real dos eventos recebidos.</p>
         </header>
 
-        <div class="bg-gray-800 shadow-2xl rounded-lg overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="min-w-full leading-normal">
-                    <thead>
-                        <tr class="border-b-2 border-gray-700">
-                            <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Data/Hora</th>
-                            <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Status</th>
-                            <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Email</th>
-                            <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Produto</th>
-                            <th class="px-5 py-3 bg-gray-700 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="webhooks-table-body">
-                         <tr id="loading-row">
-                            <td colspan="5" class="text-center p-8 text-gray-400">
-                                <svg class="animate-spin h-8 w-8 text-emerald-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <p class="mt-4">Carregando dados...</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+        <div id="main-content" class="bg-gray-800 shadow-2xl rounded-lg overflow-hidden">
+            <!-- Conteúdo será inserido aqui pelo JS -->
         </div>
     </div>
 
-    <!-- Modal de Payload -->
+    <!-- Modal para ver o Payload Completo -->
     <div id="payload-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 modal-backdrop opacity-0 pointer-events-none z-50">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col modal-content transform scale-95">
-            <div class="flex justify-between items-center p-4 border-b border-gray-700">
-                <h3 class="text-lg font-semibold text-emerald-400">Payload Completo (JSON)</h3>
-                <button id="close-payload-modal-btn" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
-            </div>
-            <div class="p-4 overflow-y-auto">
-                <pre class="bg-gray-900 text-sm text-gray-300 p-4 rounded-md whitespace-pre-wrap break-words"><code id="payload-content"></code></pre>
-            </div>
+        <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col modal-content transform scale-95">
+            <header class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-lg font-semibold">Payload Completo (JSON)</h2>
+                <button onclick="closeModal('payload-modal')" class="text-gray-400 hover:text-white">&times;</button>
+            </header>
+            <main class="p-4 overflow-y-auto">
+                <pre id="payload-content" class="text-sm bg-gray-900 p-4 rounded-md whitespace-pre-wrap break-words"></pre>
+            </main>
         </div>
     </div>
 
-    <!-- Modal de Confirmação de Delete -->
+    <!-- Modal de Confirmação para Deletar -->
     <div id="delete-confirm-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 modal-backdrop opacity-0 pointer-events-none z-50">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md modal-content transform scale-95 p-6 text-center">
-            <h3 class="text-lg font-semibold text-white mb-2">Confirmar Exclusão</h3>
-            <p class="text-gray-400 mb-6">Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.</p>
-            <div class="flex justify-center gap-4">
-                <button id="cancel-delete-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg action-button">Cancelar</button>
-                <button id="confirm-delete-btn" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-lg action-button">Sim, apagar</button>
+        <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md modal-content transform scale-95">
+            <div class="p-6 text-center">
+                <h3 class="text-xl font-bold mb-4">Confirmar Exclusão</h3>
+                <p class="text-gray-400 mb-6">Tem certeza que deseja apagar este registro? Esta ação não pode ser desfeita.</p>
+                <div class="flex justify-center gap-4">
+                    <button id="cancel-delete-btn" class="px-6 py-2 rounded-md bg-gray-600 hover:bg-gray-500 action-button">Cancelar</button>
+                    <button id="confirm-delete-btn" class="px-6 py-2 rounded-md bg-red-600 hover:bg-red-500 action-button">Sim, apagar</button>
+                </div>
             </div>
         </div>
     </div>
-
+    
     <script type="module">
         import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
         const SUPABASE_URL = 'https://tgvwmsmlbgidalupptnk.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRndndtc21sYmdpZGFsdXBwdG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NzE2ODgsImV4cCI6MjA2OTU0NzY4OH0.6uuf9sOR7DuA2xd7T-Hu5bjv-LaaW_xEWA73_dhc3uI'; // <-- COLE AQUI SUA CHAVE 'anon'
+        const SUPABASE_ANON_KEY = 'SUA_CHAVE_ANON_PUBLICA_AQUI'; 
 
-        // --- DICIONÁRIO DE TRADUÇÃO E ESTILO DOS STATUS ---
+        const mainContent = document.getElementById('main-content');
+        const subtitle = document.getElementById('subtitle');
+        let tableBody; 
+
         const statusMap = {
-            waitingPayment: { text: 'Aguardando Pag.', color: 'bg-yellow-200 text-yellow-900' },
-            paid:           { text: 'Pago', color: 'bg-green-200 text-green-900' },
-            refunded:       { text: 'Estornado', color: 'bg-blue-200 text-blue-900' },
-            abandoned:      { text: 'Abandonado', color: 'bg-gray-300 text-gray-800' },
-            refused:        { text: 'Recusado', color: 'bg-red-200 text-red-900' },
-            unpaid:         { text: 'Não Pago', color: 'bg-orange-200 text-orange-900' },
-            chargedback:    { text: 'Chargeback', color: 'bg-purple-200 text-purple-900' },
-            default:        { text: 'Desconhecido', color: 'bg-gray-400 text-gray-900' }
+            waitingPayment: { text: "Aguardando Pag.", color: "bg-yellow-500/20 text-yellow-300" },
+            paid: { text: "Pago", color: "bg-green-500/20 text-green-300" },
+            refunded: { text: "Estornado", color: "bg-blue-500/20 text-blue-300" },
+            abandoned: { text: "Abandonado", color: "bg-gray-500/20 text-gray-300" },
+            refused: { text: "Recusado", color: "bg-red-500/20 text-red-300" },
+            unpaid: { text: "Não Pago", color: "bg-orange-500/20 text-orange-300" },
+            chargedback: { text: "Chargeback", color: "bg-purple-500/20 text-purple-300" },
+            default: { text: "Desconhecido", color: "bg-gray-600/20 text-gray-400" }
         };
 
-        const tableBody = document.getElementById('webhooks-table-body');
-        const loadingRow = document.getElementById('loading-row');
+        const urlParams = new URLSearchParams(window.location.search);
+        const teamId = urlParams.get('team_id');
         
-        const payloadModal = document.getElementById('payload-modal');
-        const closePayloadModalBtn = document.getElementById('close-payload-modal-btn');
-        const payloadContent = document.getElementById('payload-content');
-
-        const deleteModal = document.getElementById('delete-confirm-modal');
-        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
-        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
-        let rowToDelete = null;
-
-        if (SUPABASE_ANON_KEY === 'ANON_AQUU') {
-             loadingRow.innerHTML = `<td colspan="5" class="text-center p-8 text-yellow-400"><strong>Atenção:</strong> Configure a variável SUPABASE_ANON_KEY no código para conectar ao Supabase.</td>`;
+        if (!teamId) {
+            mainContent.innerHTML = `<div class="p-8 text-center text-yellow-400">
+                <h2 class="text-2xl font-bold">ID do Time não encontrado.</h2>
+                <p class="mt-2">Por favor, acesse este dashboard usando a URL com sua chave de identificação. Exemplo: ...?team_id=SUA_CHAVE_SECRETA</p>
+            </div>`;
         } else {
+            subtitle.textContent = `Exibindo eventos para o time: ${teamId}`;
+            setupDashboard();
             const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            main(supabase);
+            main(supabase, teamId);
         }
 
-        function formatTimestamp(ts) {
-            return new Date(ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+        function setupDashboard() {
+            mainContent.innerHTML = `
+            <div class="overflow-x-auto">
+                <table class="min-w-full leading-normal">
+                    <thead><tr class="border-b-2 border-gray-700">
+                        <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Data/Hora</th>
+                        <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Status</th>
+                        <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Email</th>
+                        <th class="px-5 py-3 bg-gray-700 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Produto</th>
+                        <th class="px-5 py-3 bg-gray-700 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Ações</th>
+                    </tr></thead>
+                    <tbody id="webhooks-table-body">
+                         <tr id="loading-row"><td colspan="5" class="text-center p-8 text-gray-400">Carregando dados...</td></tr>
+                    </tbody>
+                </table>
+            </div>`;
+            tableBody = document.getElementById('webhooks-table-body');
         }
         
-        function getStatusInfo(status) {
-            return statusMap[status] || statusMap.default;
-        }
+        async function main(supabase, teamId) {
+            const { data, error } = await supabase.from('webhooks')
+                .select('*')
+                .eq('team_id', teamId) 
+                .order('created_at', { ascending: false });
 
-        function renderRow(webhook) {
-             const tr = document.createElement('tr');
-             tr.className = 'border-b border-gray-700 hover:bg-gray-700/50 transition-colors duration-200';
-             tr.dataset.id = webhook.id;
-             const statusInfo = getStatusInfo(webhook.event);
-             
-             tr.innerHTML = `
-                <td class="px-5 py-4 text-sm"><p class="text-gray-300 whitespace-no-wrap">${formatTimestamp(webhook.created_at)}</p></td>
-                <td class="px-5 py-4 text-sm"><span class="status-pill ${statusInfo.color}">${statusInfo.text}</span></td>
-                <td class="px-5 py-4 text-sm"><p class="text-gray-300 whitespace-no-wrap">${webhook.email || 'N/A'}</p></td>
-                <td class="px-5 py-4 text-sm"><p class="text-gray-300 whitespace-no-wrap">${webhook.product_name || 'N/A'}</p></td>
-                <td class="px-5 py-4 text-sm text-center">
-                    <button class="view-payload-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-3 rounded-full text-xs action-button mr-2" data-payload='${JSON.stringify(webhook.payload)}'>Ver</button>
-                    <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-full text-xs action-button" data-id="${webhook.id}">Apagar</button>
-                </td>
-            `;
-            return tr;
-        }
-        
-        async function main(supabase) {
-            // 1. Buscar dados iniciais
-            const { data, error } = await supabase.from('webhooks').select('*').order('created_at', { ascending: false });
+            const loadingRow = document.getElementById('loading-row');
+            if(loadingRow) loadingRow.remove();
 
             if (error) {
-                console.error("Erro ao buscar dados:", error);
-                loadingRow.innerHTML = `<td colspan="5" class="text-center p-8 text-red-400">Erro ao carregar dados. Verifique a chave 'anon' e as permissões RLS.</td>`;
+                tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-red-400">Erro ao carregar dados: ${error.message}</td></tr>`;
                 return;
             }
             
-            if(loadingRow) loadingRow.remove();
-            
-            tableBody.innerHTML = ''; // Limpa a tabela antes de preencher
-            data.forEach(webhook => tableBody.appendChild(renderRow(webhook)));
+            if (data.length === 0) {
+                 tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-gray-400">Nenhum webhook encontrado para este time.</td></tr>`;
+            } else {
+                 data.forEach(webhook => tableBody.appendChild(renderRow(webhook, supabase)));
+            }
 
-            // 2. Se inscrever para atualizações em tempo real
-            supabase.channel('webhooks_changes')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'webhooks' }, (payload) => {
-                    console.log('Novo webhook recebido!', payload.new);
-                    tableBody.insertBefore(renderRow(payload.new), tableBody.firstChild);
-                })
-                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'webhooks' }, (payload) => {
-                    console.log('Webhook deletado!', payload.old.id);
-                    const row = document.querySelector(`tr[data-id='${payload.old.id}']`);
-                    if (row) row.remove();
-                })
-                .subscribe();
-
-            // 3. Adicionar lógica de delete
-            confirmDeleteBtn.addEventListener('click', async () => {
-                if (rowToDelete) {
-                    const id = rowToDelete.dataset.id;
-                    const { error } = await supabase.from('webhooks').delete().eq('id', id);
-
-                    if (error) {
-                        console.error("Erro ao deletar:", error);
-                        alert("Não foi possível apagar o registro.");
-                    } else {
-                        // A remoção da linha da tabela agora é feita pelo listener de DELETE do Supabase
+            supabase.channel(`webhooks_changes_${teamId}`)
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'webhooks', filter: `team_id=eq.${teamId}` }, 
+                    (payload) => {
+                        const noDataRow = tableBody.querySelector('td[colspan="5"]');
+                        if(noDataRow) noDataRow.parentElement.remove();
+                        
+                        if (payload.eventType === 'INSERT') {
+                            tableBody.insertBefore(renderRow(payload.new, supabase), tableBody.firstChild);
+                        }
+                        if (payload.eventType === 'DELETE') {
+                            const row = document.querySelector(`tr[data-id='${payload.old.id}']`);
+                            if (row) row.remove();
+                        }
                     }
-                    hideDeleteModal();
+                )
+                .subscribe();
+        }
+
+        function renderRow(webhook, supabase) {
+            const statusInfo = statusMap[webhook.event] || statusMap.default;
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-gray-700 hover:bg-gray-700/50";
+            tr.setAttribute('data-id', webhook.id);
+            tr.innerHTML = `
+                <td class="px-5 py-4 text-sm">${formatTimestamp(webhook.created_at)}</td>
+                <td class="px-5 py-4 text-sm"><span class="status-pill ${statusInfo.color}">${statusInfo.text}</span></td>
+                <td class="px-5 py-4 text-sm">${webhook.email}</td>
+                <td class="px-5 py-4 text-sm">${webhook.product_name}</td>
+                <td class="px-5 py-4 text-sm text-center">
+                    <button class="view-btn text-blue-400 hover:text-blue-300 action-button mr-3">Ver</button>
+                    <button class="delete-btn text-red-400 hover:text-red-300 action-button">Apagar</button>
+                </td>
+            `;
+            tr.querySelector('.view-btn').addEventListener('click', () => showPayloadModal(webhook.payload));
+            tr.querySelector('.delete-btn').addEventListener('click', () => showDeleteModal(webhook.id, supabase));
+            return tr;
+        }
+
+        function formatTimestamp(ts) {
+            return new Date(ts).toLocaleString('pt-BR');
+        }
+
+        function showPayloadModal(payload) {
+            document.getElementById('payload-content').textContent = JSON.stringify(payload, null, 2);
+            openModal('payload-modal');
+        }
+
+        function showDeleteModal(id, supabase) {
+            openModal('delete-confirm-modal');
+            const confirmBtn = document.getElementById('confirm-delete-btn');
+            const cancelBtn = document.getElementById('cancel-delete-btn');
+
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+            newConfirmBtn.addEventListener('click', async () => {
+                const { error } = await supabase.from('webhooks').delete().eq('id', id);
+                if (error) {
+                    alert('Erro ao apagar: ' + error.message);
                 }
+                closeModal('delete-confirm-modal');
             });
+            cancelBtn.addEventListener('click', () => closeModal('delete-confirm-modal'));
         }
 
-        function showModal(modalElement) {
-            modalElement.classList.remove('opacity-0', 'pointer-events-none');
-            modalElement.querySelector('.modal-content').classList.remove('scale-95');
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.modal-content').classList.remove('scale-95');
         }
-
-        function hideModal(modalElement) {
-            modalElement.classList.add('opacity-0', 'pointer-events-none');
-            modalElement.querySelector('.modal-content').classList.add('scale-95');
+        window.closeModal = function(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.add('opacity-0');
+            modal.querySelector('.modal-content').classList.add('scale-95');
+            setTimeout(() => modal.classList.add('pointer-events-none'), 300);
         }
-
-        function showDeleteModal(row) {
-            rowToDelete = row;
-            showModal(deleteModal);
-        }
-
-        function hideDeleteModal() {
-            rowToDelete = null;
-            hideModal(deleteModal);
-        }
-
-        closePayloadModalBtn.addEventListener('click', () => hideModal(payloadModal));
-        payloadModal.addEventListener('click', (e) => (e.target === payloadModal) && hideModal(payloadModal));
-        
-        cancelDeleteBtn.addEventListener('click', hideDeleteModal);
-        deleteModal.addEventListener('click', (e) => (e.target === deleteModal) && hideDeleteModal());
-
-        tableBody.addEventListener('click', (e) => {
-            const target = e.target;
-            if (target && target.classList.contains('view-payload-btn')) {
-                showModal(payloadModal);
-                payloadContent.textContent = JSON.stringify(JSON.parse(target.dataset.payload), null, 2);
-            }
-            if (target && target.classList.contains('delete-btn')) {
-                const row = target.closest('tr');
-                showDeleteModal(row);
-            }
-        });
     </script>
 </body>
 </html>
+
